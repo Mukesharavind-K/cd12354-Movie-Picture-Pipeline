@@ -104,37 +104,62 @@ jobs:
           aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Login to Amazon ECR
-        uses: aws-actions/amazon-ecr-login@v2
-
-      - name: Set ECR registry
-        id: ecr
+      # TEMPORARY SAFE TEST
+      # This does NOT create any AWS resources.
+      - name: Verify AWS identity
         run: |
-          echo "registry=$(aws sts get-caller-identity --query Account --output text).dkr.ecr.${AWS_REGION}.amazonaws.com" >> "$GITHUB_OUTPUT"
+          echo "AWS Identity:"
+          aws sts get-caller-identity
 
-      - name: Build backend Docker image
+      # TEMPORARY SAFE TEST
+      # This only checks whether the current AWS credentials
+      # are allowed to request an ECR authorization token.
+      - name: Verify ECR authorization
         run: |
-          docker build \
-            -t "${{ steps.ecr.outputs.registry }}/${ECR_REPOSITORY}:${GITHUB_SHA}" \
-            starter/backend
+          echo "Testing ECR authorization..."
+          aws ecr get-authorization-token \
+            --region "${AWS_REGION}" > /dev/null
 
-      - name: Push backend image
-        run: |
-          docker push "${{ steps.ecr.outputs.registry }}/${ECR_REPOSITORY}:${GITHUB_SHA}"
+          echo "ECR authorization successful"
 
-      - name: Update kubeconfig
-        run: |
-          aws eks update-kubeconfig \
-            --region "${AWS_REGION}" \
-            --name "${EKS_CLUSTER_NAME}"
+      # ECR LOGIN TEMPORARILY DISABLED
+      # - name: Login to Amazon ECR
+      #   uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Deploy backend to EKS
-        run: |
-          kubectl apply \
-            -f starter/backend/k8s/deployment.yaml \
-            -f starter/backend/k8s/service.yaml
+      # Docker build/push temporarily disabled.
+      # We are testing AWS permissions first.
 
-          kubectl set image deployment/backend \
-            backend="${{ steps.ecr.outputs.registry }}/${ECR_REPOSITORY}:${GITHUB_SHA}"
+      # - name: Set ECR registry
+      #   id: ecr
+      #   run: |
+      #     echo "registry=$(aws sts get-caller-identity --query Account --output text).dkr.ecr.${AWS_REGION}.amazonaws.com" >> "$GITHUB_OUTPUT"
 
-          kubectl rollout status deployment/backend --timeout=180s
+      # - name: Build backend Docker image
+      #   run: |
+      #     docker build \
+      #       -t "${{ steps.ecr.outputs.registry }}/${ECR_REPOSITORY}:${GITHUB_SHA}" \
+      #       starter/backend
+
+      # - name: Push backend image
+      #   run: |
+      #     docker push "${{ steps.ecr.outputs.registry }}/${ECR_REPOSITORY}:${GITHUB_SHA}"
+
+      # EKS deployment temporarily disabled.
+      # DO NOT recreate the EKS cluster yet.
+      
+      # - name: Update kubeconfig
+      #   run: |
+      #     aws eks update-kubeconfig \
+      #       --region "${AWS_REGION}" \
+      #       --name "${EKS_CLUSTER_NAME}"
+
+      # - name: Deploy backend to EKS
+      #   run: |
+      #     kubectl apply \
+      #       -f starter/backend/k8s/deployment.yaml \
+      #       -f starter/backend/k8s/service.yaml
+
+      #     kubectl set image deployment/backend \
+      #       backend="${{ steps.ecr.outputs.registry }}/${ECR_REPOSITORY}:${GITHUB_SHA}"
+
+      #     kubectl rollout status deployment/backend --timeout=180s
