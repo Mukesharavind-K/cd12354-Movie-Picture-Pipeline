@@ -1,4 +1,4 @@
-name: Backend CI/CD
+name: Backend Continuous Deployment
 
 on:
   push:
@@ -8,12 +8,7 @@ on:
       - 'starter/backend/**'
       - '.github/workflows/backend-cd.yaml'
 
-  pull_request:
-    branches:
-      - main
-    paths:
-      - 'starter/backend/**'
-      - '.github/workflows/backend-cd.yaml'
+  workflow_dispatch:
 
 env:
   AWS_REGION: us-east-1
@@ -21,33 +16,78 @@ env:
   EKS_CLUSTER_NAME: cluster
 
 jobs:
-  test:
+  lint:
     runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: starter/backend
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
+
+      - name: Restore pip cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-python-3.10-pip-${{ hashFiles('starter/backend/Pipfile.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-python-3.10-pip-
 
       - name: Install Pipenv
         run: pip install pipenv
 
       - name: Install dependencies
+        run: pipenv install --dev
+
+      - name: Run lint
+        run: pipenv run lint
+
+  test:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
         working-directory: starter/backend
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Restore pip cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-python-3.10-pip-${{ hashFiles('starter/backend/Pipfile.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-python-3.10-pip-
+
+      - name: Install Pipenv
+        run: pip install pipenv
+
+      - name: Install dependencies
         run: pipenv install --dev
 
       - name: Run tests
-        working-directory: starter/backend
         run: pipenv run test
 
   build-and-deploy:
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    needs: test
+    needs:
+      - lint
+      - test
 
     permissions:
       contents: read
@@ -76,13 +116,11 @@ jobs:
         run: |
           docker build \
             -t "${{ steps.ecr.outputs.registry }}/${ECR_REPOSITORY}:${GITHUB_SHA}" \
-            -t "${{ steps.ecr.outputs.registry }}/${ECR_REPOSITORY}:latest" \
             starter/backend
 
       - name: Push backend image
         run: |
           docker push "${{ steps.ecr.outputs.registry }}/${ECR_REPOSITORY}:${GITHUB_SHA}"
-          docker push "${{ steps.ecr.outputs.registry }}/${ECR_REPOSITORY}:latest"
 
       - name: Update kubeconfig
         run: |
